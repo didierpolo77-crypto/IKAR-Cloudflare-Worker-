@@ -57,7 +57,7 @@ textarea{min-height:110px;resize:vertical}button{margin-top:18px;width:100%;padd
 </head>
 <body><main>
 <h1>Test du moteur IA IKAR</h1>
-<p>Cette page permet de tester le serveur sans Termux. La clé est envoyée au serveur par HTTPS pour cette seule demande. Elle n'est pas enregistrée dans la page ni dans le navigateur.</p>
+<p>Cette page permet de tester le serveur sans Termux. La clé est envoyée dans le corps du formulaire par HTTPS, jamais dans l'URL. Le Worker ne l'enregistre pas.</p>
 <form method="POST" action="/test">
 <label for="token">Clé secrète IKAR_API_TOKEN</label>
 <input id="token" name="token" type="password" autocomplete="off" required>
