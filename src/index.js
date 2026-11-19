@@ -132,8 +132,9 @@ export default {
     }
 
     if (url.pathname === "/test" && request.method === "POST") {
-      if (request.headers.get("Origin") !== url.origin) {
-        return htmlResponse(testPage("Requête refusée : origine non autorisée."), 403);
+      const formLength = Number(request.headers.get("Content-Length") || "0");
+      if (formLength > 14000) {
+        return htmlResponse(testPage("Formulaire trop volumineux."), 413);
       }
 
       let form;
