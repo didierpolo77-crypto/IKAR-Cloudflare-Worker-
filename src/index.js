@@ -14,6 +14,12 @@ function constantTimeEqual(a, b) {
   return diff === 0;
 }
 
+const SYSTEM_PROMPT = `Tu es IKAR, un assistant numérique francophone, utile, calme et honnête.
+Réponds en français sauf demande contraire. Sois clair, pratique et concis.
+N'affirme jamais avoir effectué une action sur le téléphone si elle n'a pas réellement été exécutée.
+Explique les limites d'Android et demande une confirmation avant toute action sensible.
+Pour les questions de sécurité, distingue les indices d'une preuve et recommande des étapes prudentes.`;
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -22,14 +28,13 @@ export default {
       return json({
         service: "IKAR Assistant API",
         status: "online",
-        ai: "not_configured"
+        ai: env.AI ? "binding_configured" : "not_configured"
       });
     }
 
     if (url.pathname !== "/v1/chat") {
       return json({ error: "not_found" }, 404);
     }
-
     if (request.method !== "POST") {
       return json({ error: "method_not_allowed" }, 405);
     }
@@ -40,14 +45,26 @@ export default {
       return json({ error: "unauthorized" }, 401);
     }
 
+    if (!env.AI || typeof env.AI.run !== "function") {
+      return json({ error: "ai_binding_missing" }, 503);
+    }
+
     const declaredLength = Number(request.headers.get("Content-Length") || "0");
     if (declaredLength > 12000) {
       return json({ error: "request_too_large" }, 413);
     }
 
+    let raw;
+    try {
+      raw = await request.text();
+      if (raw.length > 12000) return json({ error: "request_too_large" }, 413);
+    } catch {
+      return json({ error: "invalid_request" }, 400);
+    }
+
     let body;
     try {
-      body = await request.json();
+      body = JSON.parse(raw);
     } catch {
       return json({ error: "invalid_json" }, 400);
     }
@@ -57,11 +74,43 @@ export default {
       return json({ error: "invalid_message" }, 400);
     }
 
-    // The API shell is ready. Connect a model provider before returning AI answers.
-    return json({
-      error: "ai_not_configured",
-      service: "IKAR Assistant API",
-      message: "Le serveur fonctionne, mais le moteur IA en ligne n'est pas encore configuré."
-    }, 503);
+    const history = Array.isArray(body.history) ? body.history.slice(-10) : [];
+    const messages = [{ role: "system", content: SYSTEM_PROMPT }];
+
+    for (const item of history) {
+      if (!item || !["user", "assistant"].includes(item.role) ||
+          typeof item.content !== "string" || item.content.length > 2000) {
+        return json({ error: "invalid_history" }, 400);
+      }
+      messages.push({ role: item.role, content: item.content });
+    }
+    messages.push({ role: "user", content: body.message });
+
+    try {
+      const result = await env.AI.run("@cf/google/gemma-4-26b-a4b-it", {
+        messages,
+        max_tokens: 512,
+        temperature: 0.6
+      });
+
+      const reply = result?.choices?.[0]?.message?.content ??
+        result?.response ??
+        result?.output_text;
+
+      if (typeof reply !== "string" || !reply.trim()) {
+        return json({ error: "empty_model_response" }, 502);
+      }
+
+      return json({
+        service: "IKAR Assistant API",
+        model: "@cf/google/gemma-4-26b-a4b-it",
+        reply: reply.trim()
+      });
+    } catch {
+      return json({
+        error: "ai_request_failed",
+        message: "Le moteur IA n'a pas pu traiter cette demande. Réessaie plus tard."
+      }, 502);
+    }
   }
 };
