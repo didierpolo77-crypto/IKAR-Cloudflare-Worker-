@@ -148,9 +148,11 @@ export default {
       const message = form.get("message");
       const submittedToken = typeof token === "string" ? token.trim() : "";
       const configuredToken = typeof env.IKAR_API_TOKEN === "string" ? env.IKAR_API_TOKEN.trim() : "";
-      if (!submittedToken || !configuredToken ||
-          !constantTimeEqual(submittedToken, configuredToken)) {
-        return htmlResponse(testPage("Clé refusée (401). Vérifie la valeur enregistrée dans Cloudflare."), 401);
+      if (!configuredToken) {
+        return htmlResponse(testPage("Configuration serveur : le secret IKAR_API_TOKEN est absent du Worker Production. Vérifie le Worker et l'environnement où le secret a été créé."), 401);
+      }
+      if (!submittedToken || !constantTimeEqual(submittedToken, configuredToken)) {
+        return htmlResponse(testPage("Clé refusée (401). Longueur reçue : " + submittedToken.length + " caractères. Le secret existe côté Worker (" + configuredToken.length + " caractères), mais les valeurs ne correspondent pas. Ne partage aucune clé."), 401);
       }
       if (typeof message !== "string" || !message.trim() || message.length > 4000) {
         return htmlResponse(testPage("Message invalide. Limite : 4 000 caractères."), 400);
