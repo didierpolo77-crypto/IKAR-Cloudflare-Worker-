@@ -146,8 +146,10 @@ export default {
 
       const token = form.get("token");
       const message = form.get("message");
-      if (typeof token !== "string" || !env.IKAR_API_TOKEN ||
-          !constantTimeEqual(token, env.IKAR_API_TOKEN)) {
+      const submittedToken = typeof token === "string" ? token.trim() : "";
+      const configuredToken = typeof env.IKAR_API_TOKEN === "string" ? env.IKAR_API_TOKEN.trim() : "";
+      if (!submittedToken || !configuredToken ||
+          !constantTimeEqual(submittedToken, configuredToken)) {
         return htmlResponse(testPage("Clé refusée (401). Vérifie la valeur enregistrée dans Cloudflare."), 401);
       }
       if (typeof message !== "string" || !message.trim() || message.length > 4000) {
