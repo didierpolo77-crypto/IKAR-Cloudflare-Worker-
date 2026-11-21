@@ -1,4 +1,4 @@
-import { send } from "../../lib/ikar.js";
+import { send } from "../lib/ikar.js";
 
 export default function handler(req, res) {
   if (req.method !== "GET") return send(res, 405, { error: "method_not_allowed" });
