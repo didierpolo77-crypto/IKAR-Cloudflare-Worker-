@@ -76,6 +76,60 @@ N'affirme jamais avoir effectué une action sur le téléphone si elle n'a pas r
 Explique les limites d'Android et demande une confirmation avant toute action sensible.
 Pour les questions de sécurité, distingue les indices d'une preuve et recommande des étapes prudentes.`;
 
+function authorized(request, env) {
+  const token = typeof env.IKAR_API_TOKEN === "string" ? env.IKAR_API_TOKEN : "";
+  const header = request.headers.get("Authorization") || "";
+  return token.length > 0 && constantTimeEqual(header, `Bearer ${token}`);
+}
+
+async function checkUrlhaus(env, candidate) {
+  if (!env.URLHAUS_AUTH_KEY) {
+    return { error: "urlhaus_not_configured", status: 503 };
+  }
+  let parsed;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    return { error: "invalid_url", status: 400 };
+  }
+  if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password) {
+    return { error: "unsupported_url", status: 400 };
+  }
+
+  try {
+    const form = new URLSearchParams({ url: parsed.href });
+    const response = await fetch("https://urlhaus-api.abuse.ch/v1/url/", {
+      method: "POST",
+      headers: {
+        "Auth-Key": env.URLHAUS_AUTH_KEY,
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: form.toString(),
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!response.ok) {
+      return { error: "urlhaus_upstream_error", status: 502 };
+    }
+    const data = await response.json();
+    if (data?.query_status === "no_results") {
+      return { verdict: "no_match", source: "URLhaus", checked_url: parsed.href };
+    }
+    if (data?.query_status !== "ok") {
+      return { error: "urlhaus_unexpected_response", status: 502 };
+    }
+    return {
+      verdict: data.url_status === "online" ? "malicious" : "listed",
+      source: "URLhaus",
+      checked_url: parsed.href,
+      threat: typeof data.threat === "string" ? data.threat : null,
+      url_status: typeof data.url_status === "string" ? data.url_status : null,
+      date_added: typeof data.date_added === "string" ? data.date_added : null
+    };
+  } catch {
+    return { error: "urlhaus_unavailable", status: 502 };
+  }
+}
+
 async function generateReply(env, message, history = []) {
   if (!env.AI || typeof env.AI.run !== "function") {
     return { error: "ai_binding_missing", status: 503 };
@@ -165,16 +219,14 @@ export default {
       return htmlResponse(testPage(`Réponse IKAR (HTTP 200) — ${result.model}\n\n${result.reply}`));
     }
 
-    if (url.pathname !== "/v1/chat") {
+    if (url.pathname !== "/v1/chat" && url.pathname !== "/v1/url/check") {
       return json({ error: "not_found" }, 404);
     }
     if (request.method !== "POST") {
       return json({ error: "method_not_allowed" }, 405);
     }
 
-    const token = env.IKAR_API_TOKEN;
-    const authorization = request.headers.get("Authorization") || "";
-    if (!token || !constantTimeEqual(authorization, `Bearer ${token}`)) {
+    if (!authorized(request, env)) {
       return json({ error: "unauthorized" }, 401);
     }
 
@@ -196,6 +248,15 @@ export default {
       body = JSON.parse(raw);
     } catch {
       return json({ error: "invalid_json" }, 400);
+    }
+
+    if (url.pathname === "/v1/url/check") {
+      if (!body || typeof body.url !== "string" || body.url.trim().length === 0 || body.url.length > 2048) {
+        return json({ error: "invalid_url" }, 400);
+      }
+      const result = await checkUrlhaus(env, body.url.trim());
+      if (!result.verdict) return json({ error: result.error }, result.status || 502);
+      return json({ service: "IKAR URL Protection", ...result });
     }
 
     if (!body || typeof body.message !== "string" ||
