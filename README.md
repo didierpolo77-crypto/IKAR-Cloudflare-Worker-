@@ -4,28 +4,28 @@ API backend for IKAR Assistant. This repository is the Cloudflare deployment sou
 
 ## Cloudflare deployment
 
-- Worker name: `bold-fire-498brikar-assistant-api` (matches the currently created dashboard Worker)
+- Worker name: `bold-fire-498brikar-assistant-api` (matches the Worker created in Cloudflare)
 - Entry point: `src/index.js`
 - Cloudflare Workers AI binding: `AI` (configured in `wrangler.toml`)
-- Deploy manually with Wrangler or through GitHub Actions after configuring repository settings.
+- GitHub Actions workflow deploys on pushes to `main` affecting Worker files or manually via workflow dispatch.
 
-### GitHub Actions secrets and variables
+### GitHub repository settings required
 
-Add these to the repository settings:
+Add these repository secrets under **Settings → Secrets and variables → Actions → New repository secret**:
 
-- Secret `CF_API_TOKEN`: Cloudflare API token with Workers Scripts edit permission and account access.
-- Variable `CF_ACCOUNT_ID`: Cloudflare account ID.
+- `CF_API_TOKEN`: Cloudflare API token with Workers Scripts edit permissions.
+- `IKAR_API_TOKEN`: long random API bearer token. Must match the client token configured in IKAR; do not invent a new one without updating the app.
+- `URLHAUS_AUTH_KEY`: URLhaus Auth-Key.
 
-Workflow: `.github/workflows/deploy-cloudflare-worker.yml`. It deploys on pushes to `main` affecting Worker files, or via manual workflow dispatch.
+Add repository variable:
 
-### Worker secrets
+- `CF_ACCOUNT_ID`: Cloudflare account ID.
 
-In Cloudflare Worker **Settings → Variables and Secrets**, add as encrypted secrets:
+The GitHub Action deploys the Worker and uploads `IKAR_API_TOKEN` and `URLHAUS_AUTH_KEY` as encrypted Worker secrets. Secrets are never written to repository files.
 
-- `IKAR_API_TOKEN`: long random API bearer token shared with the Android app backend configuration.
-- `URLHAUS_AUTH_KEY`: URLhaus Auth-Key for URL threat checks.
+## Worker secrets
 
-Do not store these values in source code, GitHub commits, APKs, or chat.
+Secrets are managed through the GitHub Action; alternatively, they can be set directly in Cloudflare Worker **Settings → Variables and Secrets**.
 
 ## Routes
 
@@ -44,4 +44,3 @@ This Worker currently uses the Cloudflare Workers AI binding configured in `wran
 - `GET /health`
 - `POST /v1/chat` with bearer token
 - `POST /v1/url/check` with bearer token and a URL
-
