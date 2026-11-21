@@ -1,45 +1,47 @@
-# IKAR Assistant API
+# IKAR Assistant API — Cloudflare Worker
 
-Backend HTTPS pour IKAR Assistant, compatible avec Render (Node.js) et Hugging Face Inference Providers.
+API backend for IKAR Assistant. This repository is the Cloudflare deployment source; Render is kept as a fallback during migration.
 
-## Déploiement Render
+## Cloudflare deployment
 
-- Runtime : Node
-- Branch : main
-- Root Directory : laisser vide
-- Build Command : `npm install`
-- Start Command : `npm start`
+- Worker name: `bold-fire-498brikar-assistant-api` (matches the currently created dashboard Worker)
+- Entry point: `src/index.js`
+- Cloudflare Workers AI binding: `AI` (configured in `wrangler.toml`)
+- Deploy manually with Wrangler or through GitHub Actions after configuring repository settings.
 
-Le serveur écoute sur `0.0.0.0` et utilise le port fourni par Render via `PORT`.
+### GitHub Actions secrets and variables
 
-## Variables secrètes à configurer dans Render
+Add these to the repository settings:
 
-Créer ces variables dans **Environment** du service Render (ne jamais les écrire dans GitHub, l'APK ou une conversation) :
+- Secret `CF_API_TOKEN`: Cloudflare API token with Workers Scripts edit permission and account access.
+- Variable `CF_ACCOUNT_ID`: Cloudflare account ID.
 
-- `IKAR_API_TOKEN` : une longue clé secrète aléatoire, choisie par le propriétaire et conservée en lieu sûr.
-- `HF_TOKEN` : le jeton Hugging Face avec autorisation Inference Providers.
-- `HF_MODEL` (facultatif) : modèle servi par un fournisseur compatible. Valeur par défaut : `deepseek-ai/DeepSeek-V4.1-Flash:cheapest`.
+Workflow: `.github/workflows/deploy-cloudflare-worker.yml`. It deploys on pushes to `main` affecting Worker files, or via manual workflow dispatch.
 
-L'accès et le coût de l'inférence dépendent du modèle, du fournisseur et des crédits/limites du compte Hugging Face. L'hébergement Render gratuit ne rend pas l'inférence Hugging Face automatiquement gratuite.
+### Worker secrets
+
+In Cloudflare Worker **Settings → Variables and Secrets**, add as encrypted secrets:
+
+- `IKAR_API_TOKEN`: long random API bearer token shared with the Android app backend configuration.
+- `URLHAUS_AUTH_KEY`: URLhaus Auth-Key for URL threat checks.
+
+Do not store these values in source code, GitHub commits, APKs, or chat.
 
 ## Routes
 
-- `GET /health` : état du serveur et indicateurs de configuration (sans révéler les secrets).
-- `POST /v1/chat` : API protégée par `Authorization: Bearer <IKAR_API_TOKEN>`.
+- `GET /health`: basic Worker status and whether AI binding exists; does not reveal secret values.
+- `POST /v1/chat`: authenticated chat. Header `Authorization: Bearer <IKAR_API_TOKEN>`. JSON body: `{ "message": "...", "history": [] }`.
+- `POST /v1/url/check`: authenticated URLhaus lookup. Header same as above. JSON body: `{ "url": "https://example.com/" }`. The URL is submitted to URLhaus; do not submit private or sensitive URLs.
 
-Exemple de corps JSON :
+URLhaus returns `verdict: "malicious"` when its record is currently online, `"listed"` for a listed record that is not online, and `"no_match"` when it has no result. A no-match is not a guarantee of safety.
 
-```json
-{
-  "message": "Bonjour IKAR",
-  "history": []
-}
-```
+## AI provider
 
-## Sécurité et limites
+This Worker currently uses the Cloudflare Workers AI binding configured in `wrangler.toml`, not Hugging Face. Render's existing Hugging Face backend remains available while the provider and Android endpoint are migrated and tested.
 
-- Les secrets sont lus depuis les variables d'environnement du serveur.
-- Les corps de requête et l'historique sont limités.
-- Les erreurs du fournisseur ne transmettent pas son corps de réponse au client.
-- L'API ne réalise aucune action sur le téléphone.
-- Le fichier `src/index.js` et `wrangler.toml` sont conservés pour le déploiement Cloudflare Workers ; Render utilise `server.js`.
+## Test
+
+- `GET /health`
+- `POST /v1/chat` with bearer token
+- `POST /v1/url/check` with bearer token and a URL
+
