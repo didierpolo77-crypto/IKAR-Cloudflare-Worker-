@@ -1,2 +1,2 @@
-import { urlCheck } from "../../../../lib/ikar.js";
+import { urlCheck } from "../../../lib/ikar.js";
 export default urlCheck;
