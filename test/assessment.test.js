@@ -89,3 +89,24 @@ test("a ThreatFox match without confidence is not silently treated as high", () 
   );
   assert.equal(result.risk, "elevated");
 });
+
+test("partial provider coverage cannot produce a clean result", () => {
+  const result = assessReputation(
+    [{ status: "not_listed" }, { status: "unavailable", reason: "timeout" }],
+    [{ status: "not_listed" }, { status: "not_listed" }]
+  );
+  assert.equal(result.risk, "undetermined");
+  assert.equal(result.sourceStatus.urlhaus, "partial");
+  assert.equal(result.sourceStatus.threatfox, "available");
+  assert.match(result.note, /couverture.*incomplète/i);
+});
+
+test("null ThreatFox confidence stays unknown rather than becoming zero", () => {
+  const result = assessReputation(
+    [{ status: "not_listed" }],
+    [{ status: "listed", matches: [{ confidence_level: null }] }]
+  );
+  const reason = result.reasons.find(item => item.code === "threatfox_match_lower_confidence");
+  assert.equal(reason.evidence.confidence_level, null);
+  assert.match(reason.message, /sans niveau de confiance/);
+});
