@@ -187,3 +187,14 @@ test("historical URLhaus evidence plus a ThreatFox match remains elevated or hig
   );
   assert.equal(result.risk, "elevated");
 });
+
+
+test("historical URLhaus evidence with incomplete source coverage stays elevated", () => {
+  const result = assessReputation(
+    [{ status: "listed", checked_host: "partial.example", online_url_count: 0 }],
+    [{ status: "unavailable", reason: "timeout", checked_ioc: "partial.example" }]
+  );
+  assert.equal(result.risk, "elevated");
+  const reason = result.reasons.find(item => item.code === "urlhaus_historical_or_inactive_match");
+  assert.equal(reason.severity, "elevated");
+});
