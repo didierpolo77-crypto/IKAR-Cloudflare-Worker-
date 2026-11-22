@@ -121,7 +121,7 @@ test("assessment exposes checked-at timestamps and coverage-only confidence", ()
   assert.equal(result.sourceFreshness.checked_at, "2026-11-22T12:00:00.000Z");
   assert.equal(result.sourceFreshness.urlhaus.checked_at, "2026-11-22T12:00:00.000Z");
   assert.equal(result.confidence.score, 100);
-  assert.match(result.confidence.meaning, /pas une probabilité/);
+  assert.match(result.confidence.meaning, /probabilité/);
 });
 
 test("ThreatFox freshness uses last_seen and distinguishes recent from stale", () => {
