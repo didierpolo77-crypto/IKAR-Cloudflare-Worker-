@@ -1,8 +1,11 @@
 export function assessReputation(urlhausResults = [], threatfoxResults = []) {
   const urlhausMatches = urlhausResults.filter(item => item?.status === "listed");
   const threatfoxMatches = threatfoxResults.filter(item => item?.status === "listed");
-  const urlhausAvailable = urlhausResults.some(item => ["listed", "not_listed"].includes(item?.status));
-  const threatfoxAvailable = threatfoxResults.some(item => ["listed", "not_listed"].includes(item?.status));
+  const urlhausResponded = urlhausResults.some(item => ["listed", "not_listed"].includes(item?.status));
+  const threatfoxResponded = threatfoxResults.some(item => ["listed", "not_listed"].includes(item?.status));
+  // A provider is fully available only when every queried indicator returned a usable answer.
+  const urlhausAvailable = urlhausResults.length > 0 && urlhausResults.every(item => ["listed", "not_listed"].includes(item?.status));
+  const threatfoxAvailable = threatfoxResults.length > 0 && threatfoxResults.every(item => ["listed", "not_listed"].includes(item?.status));
 
   const reasons = [];
   let hasHighRiskEvidence = false;
@@ -53,7 +56,8 @@ export function assessReputation(urlhausResults = [], threatfoxResults = []) {
       });
     }
     for (const match of matches) {
-      const confidence = Number.isFinite(Number(match.confidence_level))
+      const confidence = match.confidence_level !== null && match.confidence_level !== undefined &&
+        match.confidence_level !== "" && Number.isFinite(Number(match.confidence_level))
         ? Number(match.confidence_level) : null;
       const highConfidence = confidence !== null && confidence >= 70;
       if (highConfidence) hasHighRiskEvidence = true;
@@ -113,9 +117,9 @@ export function assessReputation(urlhausResults = [], threatfoxResults = []) {
       severity: "info",
       message: "Aucune correspondance retournée par URLhaus et ThreatFox pour les indicateurs interrogés."
     });
-  } else if (urlhausAvailable || threatfoxAvailable) {
+  } else if (urlhausResponded || threatfoxResponded) {
     risk = "undetermined";
-    note = "Une seule des deux sources a répondu de façon exploitable ; les données sont insuffisantes pour conclure à l'absence de menace.";
+    note = "La couverture des sources est incomplète : certaines vérifications ont échoué ou une source n'a pas répondu pour tous les indicateurs. Impossible de conclure à l'absence de menace.";
   }
 
   return {
@@ -124,8 +128,8 @@ export function assessReputation(urlhausResults = [], threatfoxResults = []) {
     urlhausAvailable,
     threatfoxAvailable,
     sourceStatus: {
-      urlhaus: urlhausAvailable ? "available" : "unavailable",
-      threatfox: threatfoxAvailable ? "available" : "unavailable"
+      urlhaus: urlhausAvailable ? "available" : (urlhausResponded ? "partial" : "unavailable"),
+      threatfox: threatfoxAvailable ? "available" : (threatfoxResponded ? "partial" : "unavailable")
     },
     urlhausMatches,
     threatfoxMatches,
