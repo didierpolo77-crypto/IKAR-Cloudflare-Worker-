@@ -43,6 +43,7 @@ public class MainActivity extends Activity {
         fileResult = label("Aucun fichier analysé. Une empreinte SHA-256 n'est pas un verdict antivirus.", 13, false);
         addCard(fileResult);
         addSection("VÉRIFICATION DE DOMAINE");
+        addCard(label("Note : le projet Vercel utilise actuellement une protection SSO. La vérification depuis Android peut donc être refusée tant qu’un accès mobile public et sécurisé n’est pas configuré.", 12, false));
         domainInput = input("exemple.com"); root.addView(domainInput);
         tokenInput = input("Jeton API IKAR (saisi ici, non enregistré)");
         tokenInput.setInputType( android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD );
