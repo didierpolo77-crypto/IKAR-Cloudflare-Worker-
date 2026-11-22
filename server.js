@@ -349,8 +349,12 @@ small{color:#526170}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#
         status: isIpAddress ? "ip_input" : "resolved",
         risk: assessment.risk,
         sources_checked: ["URLhaus", "ThreatFox"],
+        source_status: assessment.sourceStatus,
         indicators_checked: iocsToCheck.length,
         matches_found: assessment.matchesFound,
+        reasons: assessment.reasons,
+        decision_criteria: assessment.criteria,
+        limitations: assessment.limitations,
         note: assessment.note
       }
     });
