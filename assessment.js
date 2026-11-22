@@ -61,7 +61,7 @@ export function assessReputation(urlhausResults = [], threatfoxResults = [], opt
     } else {
       reasons.push({
         code: "urlhaus_historical_or_inactive_match",
-        severity: "info",
+        severity: urlhausAvailable && threatfoxAvailable && threatfoxMatches.length === 0 ? "info" : "elevated",
         provider: item.provider || "URLhaus (abuse.ch)",
         indicator: item.checked_host || null,
         message: "URLhaus a une entrée pour cet hôte, mais aucune URL active n'est confirmée dans le résultat actuel.",
