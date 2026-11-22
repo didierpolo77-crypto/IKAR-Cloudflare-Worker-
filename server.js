@@ -1,5 +1,6 @@
 import http from "node:http";
 import { timingSafeEqual } from "node:crypto";
+import { isIP } from "node:net";
 
 const PORT = Number(process.env.PORT || 10000);
 const HOST = "0.0.0.0";
@@ -125,6 +126,53 @@ async function lookupUrlhausHost(host) {
   };
 }
 
+
+async function lookupThreatFoxIoc(ioc, authKey) {
+  if (!authKey) return { status: "unavailable", reason: "threatfox_key_not_configured", checked_ioc: ioc };
+  let response;
+  try {
+    response = await fetch("https://threatfox-api.abuse.ch/api/v1/", {
+      method: "POST",
+      headers: {
+        "Auth-Key": authKey,
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      body: JSON.stringify({ query: "search_ioc", search_term: ioc, exact_match: true }),
+      signal: AbortSignal.timeout(9000)
+    });
+  } catch {
+    return { status: "unavailable", reason: "threatfox_connection_failed", checked_ioc: ioc };
+  }
+  if (!response.ok) return { status: "unavailable", reason: "threatfox_http_error", checked_ioc: ioc };
+  let data;
+  try { data = await response.json(); }
+  catch { return { status: "unavailable", reason: "threatfox_invalid_response", checked_ioc: ioc }; }
+  if (data.query_status === "no_result" || data.query_status === "no_results") {
+    return { provider: "ThreatFox (abuse.ch)", status: "not_listed", checked_ioc: ioc };
+  }
+  if (data.query_status !== "ok") {
+    return { status: "unavailable", reason: "threatfox_query_error", checked_ioc: ioc };
+  }
+  const matches = Array.isArray(data.data) ? data.data.slice(0, 5) : [];
+  if (!matches.length) return { provider: "ThreatFox (abuse.ch)", status: "not_listed", checked_ioc: ioc };
+  return {
+    provider: "ThreatFox (abuse.ch)",
+    status: "listed",
+    checked_ioc: ioc,
+    match_count: Array.isArray(data.data) ? data.data.length : matches.length,
+    matches: matches.map(item => ({
+      ioc: typeof item.ioc === "string" ? item.ioc.slice(0, 300) : null,
+      ioc_type: item.ioc_type || null,
+      threat_type: item.threat_type || null,
+      malware: item.malware_printable || item.malware || null,
+      confidence_level: Number.isFinite(Number(item.confidence_level)) ? Number(item.confidence_level) : null,
+      first_seen: item.first_seen || null,
+      last_seen: item.last_seen || null,
+      reference: typeof item.reference === "string" ? item.reference.slice(0, 500) : null
+    }))
+  };
+}
 async function handle(req, res) {
   const url = new URL(req.url, "http://localhost");
 
@@ -333,39 +381,89 @@ small{color:#526170}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#
     const authorization = (req.headers.authorization || "").trim();
     if (!apiToken) return send(res, 503, { error: "api_token_not_configured" });
     if (!safeEqual(authorization, `Bearer ${apiToken}`)) return send(res, 401, { error: "invalid_api_token" });
+
     let body;
     try { body = JSON.parse(await readBody(req, 4000)); }
     catch (error) { return send(res, error.status || 400, { error: error.status ? error.message : "invalid_json" }); }
+
     const name = typeof body?.domain === "string" ? body.domain.trim().toLowerCase().replace(/\\.$/, "") : "";
+    const isIpAddress = isIP(name) !== 0;
     const validDomain = name.length >= 1 && name.length <= 253 &&
-      !name.includes("://") && !name.includes("/") && !name.includes(":") &&
-      name.split(".").every(label => label.length >= 1 && label.length <= 63 &&
-        /^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(label));
-    if (!validDomain) return send(res, 400, { error: "invalid_domain" });
+      !name.includes("://") && !name.includes("/") &&
+      (isIpAddress || (!name.includes(":") && name.split(".").every(label =>
+        label.length >= 1 && label.length <= 63 &&
+        /^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(label)
+      )));
+    if (!validDomain) return send(res, 400, { error: "invalid_domain_or_ip" });
+
     let dns;
-    try { dns = await resolveWithAdGuard(name, "A"); }
-    catch (error) { return send(res, 502, { error: error.message === "adguard_dns_error" ? error.message : "adguard_dns_unreachable" }); }
-    const dnsStatus = dns.dns_status === 0 ? "resolved" : dns.dns_status === 3 ? "not_found" : "dns_error";
-    const reputation = await lookupUrlhausHost(name);
-    let risk = "undetermined";
-    let note = "Aucune conclusion fiable possible : la réputation URLhaus n'est pas disponible.";
-    if (reputation.status === "listed") {
-      risk = reputation.online_url_count > 0 ? "high" : "elevated";
-      note = reputation.online_url_count > 0
-        ? "URLhaus signale des URL de distribution de logiciels malveillants actuellement en ligne sur cet hôte. Évite de le visiter."
-        : "URLhaus connaît des URL associées à des logiciels malveillants sur cet hôte. Cela ne prouve pas que chaque page du domaine est malveillante.";
-    } else if (reputation.status === "not_listed") {
-      risk = "no_known_match";
-      note = "Aucune correspondance trouvée dans URLhaus. Cela ne garantit pas que le domaine est sûr.";
+    let addresses = [];
+    if (isIpAddress) {
+      dns = {
+        provider: "Direct IP input",
+        status: "not_required",
+        queried_name: name,
+        answers: [{ type: isIP(name) === 4 ? 1 : 28, data: name }]
+      };
+      addresses = [name];
+    } else {
+      try {
+        dns = await resolveWithAdGuard(name, "A");
+        addresses = [...new Set(dns.answers.filter(item => item.type === 1 && typeof item.data === "string").map(item => item.data))].slice(0, 5);
+      } catch (error) {
+        return send(res, 502, {
+          error: error.message === "adguard_dns_error" ? error.message : "adguard_dns_unreachable",
+          stage: "dns_resolution"
+        });
+      }
     }
+
+    const authKey = (process.env.URLHAUS_AUTH_KEY || "").trim();
+    const iocsToCheck = [...new Set([name, ...addresses])].slice(0, 6);
+    const [urlhausResults, threatfoxResults] = await Promise.all([
+      Promise.all(iocsToCheck.map(ioc => lookupUrlhausHost(ioc))),
+      Promise.all(iocsToCheck.map(ioc => lookupThreatFoxIoc(ioc, authKey)))
+    ]);
+
+    const urlhausMatches = urlhausResults.filter(item => item.status === "listed");
+    const threatfoxMatches = threatfoxResults.filter(item => item.status === "listed");
+    const urlhausAvailable = urlhausResults.some(item => item.status === "listed" || item.status === "not_listed");
+    const threatfoxAvailable = threatfoxResults.some(item => item.status === "listed" || item.status === "not_listed");
+    const anyMatch = urlhausMatches.length > 0 || threatfoxMatches.length > 0;
+    const activeUrlhaus = urlhausMatches.some(item => Number(item.online_url_count) > 0);
+    const highConfidenceThreatFox = threatfoxMatches.some(item =>
+      Array.isArray(item.matches) && item.matches.some(match => Number(match.confidence_level) >= 70)
+    );
+
+    let risk = "undetermined";
+    let note = "Les sources de réputation n'ont pas fourni assez de données pour conclure.";
+    if (anyMatch) {
+      risk = activeUrlhaus || highConfidenceThreatFox ? "high" : "elevated";
+      note = "Au moins une source de renseignement sur les menaces signale cet hôte ou une adresse IP associée. Évite de le visiter et vérifie les indicateurs détaillés.";
+    } else if (urlhausAvailable && threatfoxAvailable) {
+      risk = "no_known_match";
+      note = "Aucune correspondance trouvée dans URLhaus et ThreatFox pour les indicateurs vérifiés. Cela ne garantit pas que le domaine ou l'adresse IP est sûr.";
+    } else if (urlhausAvailable || threatfoxAvailable) {
+      risk = "undetermined";
+      note = "Une seule source de réputation a répondu. L'absence de correspondance dans cette source ne suffit pas pour conclure à la sécurité.";
+    }
+
     return send(res, 200, {
-      service: "IKAR Domain Security Check",
-      domain: name,
-      dns: dns,
-      reputation,
+      service: "IKAR Domain and IP Security Check",
+      indicator: name,
+      indicator_type: isIpAddress ? (isIP(name) === 4 ? "ipv4" : "ipv6") : "domain",
+      dns,
+      checked_ips: addresses,
+      reputation: {
+        urlhaus: { status: urlhausAvailable ? "available" : "unavailable", results: urlhausResults },
+        threatfox: { status: threatfoxAvailable ? "available" : "unavailable", results: threatfoxResults }
+      },
       assessment: {
-        status: dnsStatus,
+        status: isIpAddress ? "ip_input" : "resolved",
         risk,
+        sources_checked: ["URLhaus", "ThreatFox"],
+        indicators_checked: iocsToCheck.length,
+        matches_found: urlhausMatches.length + threatfoxMatches.length,
         note
       }
     });
