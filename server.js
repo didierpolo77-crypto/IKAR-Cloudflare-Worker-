@@ -76,48 +76,48 @@ body{font:16px system-ui,sans-serif;max-width:560px;margin:32px auto;padding:0 1
 label{display:block;margin:14px 0 6px;font-weight:600}
 input,button{box-sizing:border-box;width:100%;padding:12px;border:1px solid #aab4c0;border-radius:8px;font:inherit}
 button{margin-top:18px;background:#1457c5;color:white;border:0;font-weight:700}
-small{color:#526170}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f1f4f7;padding:12px;border-radius:8px}
+button:disabled{opacity:.6}
+small{color:#526170}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f1f4f7;padding:12px;border-radius:8px;min-height:48px}
 </style>
 </head>
 <body>
 <h1>Vérification AdGuard DNS</h1>
-<p>Cette page envoie le jeton uniquement à l'API IKAR sur ce même domaine. Il n'est pas enregistré dans la page.</p>
-<form id="test">
+<p>Le jeton est envoyé uniquement à l'API IKAR sur ce domaine. Ne le partage jamais.</p>
 <label for="token">Jeton API IKAR</label>
-<input id="token" type="password" autocomplete="off" required>
+<input id="token" type="password" autocomplete="off" placeholder="Saisir le jeton" />
 <label for="domain">Nom de domaine à tester</label>
-<input id="domain" value="example.com" autocomplete="off" required>
-<button id="submit" type="submit">Tester la résolution DNS</button>
-</form>
-<p><small>Le jeton est effacé après l'envoi. Ne le partage jamais dans une conversation.</small></p>
+<input id="domain" value="example.com" autocomplete="off" />
+<button id="submit" type="button">Tester la résolution DNS</button>
 <h2>Résultat</h2>
 <pre id="result">En attente du test.</pre>
 <script>
-const form=document.getElementById("test");
-const token=document.getElementById("token");
-const domain=document.getElementById("domain");
-const result=document.getElementById("result");
-const button=document.getElementById("submit");
-form.addEventListener("submit",async event=>{
-  event.preventDefault();
-  const secret=token.value;
-  token.value="";
-  button.disabled=true;
-  result.textContent="Test en cours…";
-  try{
-    const response=await fetch("/api/dns/resolve",{
-      method:"POST",
-      headers:{"Authorization":"Bearer "+secret,"Content-Type":"application/json"},
-      body:JSON.stringify({name:domain.value,type:"A"})
-    });
-    const data=await response.json();
-    result.textContent="HTTP "+response.status+"\n"+JSON.stringify(data,null,2);
-  }catch(error){
-    result.textContent="Erreur réseau : "+error.message;
-  }finally{
-    button.disabled=false;
-  }
-});
+(function(){
+  var button=document.getElementById("submit");
+  var token=document.getElementById("token");
+  var domain=document.getElementById("domain");
+  var result=document.getElementById("result");
+  button.addEventListener("click", async function(){
+    var secret=token.value;
+    if(!secret){result.textContent="Saisis d'abord ton jeton API IKAR.";return;}
+    if(!domain.value.trim()){result.textContent="Saisis un nom de domaine.";return;}
+    token.value="";
+    button.disabled=true;
+    result.textContent="Test en cours…";
+    try{
+      var response=await fetch("/api/dns/resolve",{
+        method:"POST",
+        headers:{"Authorization":"Bearer "+secret,"Content-Type":"application/json"},
+        body:JSON.stringify({name:domain.value.trim(),type:"A"})
+      });
+      var data=await response.json();
+      result.textContent="HTTP "+response.status+"\\n"+JSON.stringify(data,null,2);
+    }catch(error){
+      result.textContent="Erreur réseau : "+String(error && error.message || error);
+    }finally{
+      button.disabled=false;
+    }
+  });
+})();
 </script>
 </body>
 </html>`);
