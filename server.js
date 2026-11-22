@@ -333,8 +333,6 @@ small{color:#526170}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#
     ]);
 
     const assessment = assessReputation(urlhausResults, threatfoxResults);
-    const { urlhausAvailable, threatfoxAvailable } = assessment;
-
     return send(res, 200, {
       service: "IKAR Domain and IP Security Check",
       indicator: name,
@@ -342,8 +340,8 @@ small{color:#526170}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#
       dns,
       checked_ips: addresses,
       reputation: {
-        urlhaus: { status: urlhausAvailable ? "available" : "unavailable", results: urlhausResults },
-        threatfox: { status: threatfoxAvailable ? "available" : "unavailable", results: threatfoxResults }
+        urlhaus: { status: assessment.sourceStatus.urlhaus, results: urlhausResults },
+        threatfox: { status: assessment.sourceStatus.threatfox, results: threatfoxResults }
       },
       assessment: {
         status: isIpAddress ? "ip_input" : "resolved",
