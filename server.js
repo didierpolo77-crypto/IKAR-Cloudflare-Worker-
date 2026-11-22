@@ -21,6 +21,17 @@ function send(res, status, data) {
   res.end(JSON.stringify(data));
 }
 
+function sendHtml(res, status, html) {
+  res.writeHead(status, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+  });
+  res.end(html);
+}
+
 function safeEqual(a, b) {
   if (typeof a !== "string" || typeof b !== "string") return false;
   const left = Buffer.from(a);
@@ -51,6 +62,65 @@ async function handle(req, res) {
       model_configured: Boolean(process.env.HF_MODEL || DEFAULT_MODEL),
       hf_token_configured: Boolean(process.env.HF_TOKEN)
     });
+  }
+
+  if (req.method === "GET" && url.pathname === "/dns-test") {
+    return sendHtml(res, 200, `<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Test DNS IKAR</title>
+<style>
+body{font:16px system-ui,sans-serif;max-width:560px;margin:32px auto;padding:0 16px;color:#18202a}
+label{display:block;margin:14px 0 6px;font-weight:600}
+input,button{box-sizing:border-box;width:100%;padding:12px;border:1px solid #aab4c0;border-radius:8px;font:inherit}
+button{margin-top:18px;background:#1457c5;color:white;border:0;font-weight:700}
+small{color:#526170}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f1f4f7;padding:12px;border-radius:8px}
+</style>
+</head>
+<body>
+<h1>Vérification AdGuard DNS</h1>
+<p>Cette page envoie le jeton uniquement à l'API IKAR sur ce même domaine. Il n'est pas enregistré dans la page.</p>
+<form id="test">
+<label for="token">Jeton API IKAR</label>
+<input id="token" type="password" autocomplete="off" required>
+<label for="domain">Nom de domaine à tester</label>
+<input id="domain" value="example.com" autocomplete="off" required>
+<button id="submit" type="submit">Tester la résolution DNS</button>
+</form>
+<p><small>Le jeton est effacé après l'envoi. Ne le partage jamais dans une conversation.</small></p>
+<h2>Résultat</h2>
+<pre id="result">En attente du test.</pre>
+<script>
+const form=document.getElementById("test");
+const token=document.getElementById("token");
+const domain=document.getElementById("domain");
+const result=document.getElementById("result");
+const button=document.getElementById("submit");
+form.addEventListener("submit",async event=>{
+  event.preventDefault();
+  const secret=token.value;
+  token.value="";
+  button.disabled=true;
+  result.textContent="Test en cours…";
+  try{
+    const response=await fetch("/api/dns/resolve",{
+      method:"POST",
+      headers:{"Authorization":"Bearer "+secret,"Content-Type":"application/json"},
+      body:JSON.stringify({name:domain.value,type:"A"})
+    });
+    const data=await response.json();
+    result.textContent="HTTP "+response.status+"\n"+JSON.stringify(data,null,2);
+  }catch(error){
+    result.textContent="Erreur réseau : "+error.message;
+  }finally{
+    button.disabled=false;
+  }
+});
+</script>
+</body>
+</html>`);
   }
 
   if (url.pathname === "/api/dns/resolve") {
