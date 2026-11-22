@@ -110,3 +110,59 @@ test("null ThreatFox confidence stays unknown rather than becoming zero", () => 
   assert.equal(reason.evidence.confidence_level, null);
   assert.match(reason.message, /sans niveau de confiance/);
 });
+
+
+test("assessment exposes checked-at timestamps and coverage-only confidence", () => {
+  const result = assessReputation(
+    [{ status: "not_listed", checked_host: "example.com" }],
+    [{ status: "not_listed", checked_ioc: "example.com" }],
+    { checkedAt: "2026-11-22T12:00:00.000Z" }
+  );
+  assert.equal(result.sourceFreshness.checked_at, "2026-11-22T12:00:00.000Z");
+  assert.equal(result.sourceFreshness.urlhaus.checked_at, "2026-11-22T12:00:00.000Z");
+  assert.equal(result.confidence.score, 100);
+  assert.match(result.confidence.meaning, /pas une probabilité/);
+});
+
+test("ThreatFox freshness uses last_seen and distinguishes recent from stale", () => {
+  const recent = assessReputation(
+    [{ status: "not_listed", checked_host: "fresh.example" }],
+    [{ status: "listed", checked_ioc: "fresh.example", matches: [{ confidence_level: 40, last_seen: "2026-11-10 00:00:00 UTC" }] }],
+    { checkedAt: "2026-11-22T00:00:00.000Z" }
+  );
+  assert.equal(recent.sourceFreshness.threatfox.freshness.status, "recent");
+  const stale = assessReputation(
+    [{ status: "not_listed", checked_host: "old.example" }],
+    [{ status: "listed", checked_ioc: "old.example", matches: [{ confidence_level: 40, last_seen: "2026-06-01 00:00:00 UTC" }] }],
+    { checkedAt: "2026-11-22T00:00:00.000Z" }
+  );
+  assert.equal(stale.sourceFreshness.threatfox.freshness.status, "stale");
+});
+
+test("URLhaus first_seen is not incorrectly treated as last activity", () => {
+  const result = assessReputation(
+    [{ status: "listed", checked_host: "old.example", online_url_count: 0, first_seen: "2020-01-01" }],
+    [{ status: "not_listed", checked_ioc: "old.example" }],
+    { checkedAt: "2026-11-22T00:00:00.000Z" }
+  );
+  assert.equal(result.sourceFreshness.urlhaus.freshness, "unknown");
+});
+
+test("same-indicator disagreement is surfaced without erasing the match", () => {
+  const result = assessReputation(
+    [{ status: "listed", checked_host: "mixed.example", online_url_count: 0 }],
+    [{ status: "not_listed", checked_ioc: "mixed.example" }]
+  );
+  assert.equal(result.risk, "elevated");
+  assert.equal(result.divergences.length, 1);
+  assert.ok(result.reasons.some(reason => reason.code === "source_disagreement"));
+});
+
+test("confidence score reflects partial query coverage, not the risk verdict", () => {
+  const result = assessReputation(
+    [{ status: "not_listed" }, { status: "unavailable" }],
+    [{ status: "not_listed" }, { status: "not_listed" }]
+  );
+  assert.equal(result.confidence.score, 75);
+  assert.equal(result.risk, "undetermined");
+});
