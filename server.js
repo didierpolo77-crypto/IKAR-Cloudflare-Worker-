@@ -97,7 +97,7 @@ small{color:#526170}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#
   var domain=document.getElementById("domain");
   var result=document.getElementById("result");
   button.addEventListener("click", async function(){
-    var secret=token.value;
+    var secret=token.value.trim();
     if(!secret){result.textContent="Saisis d'abord ton jeton API IKAR.";return;}
     if(!domain.value.trim()){result.textContent="Saisis un nom de domaine.";return;}
     token.value="";
@@ -128,10 +128,13 @@ small{color:#526170}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#
       return send(res, 405, { error: "method_not_allowed" });
     }
 
-    const apiToken = process.env.IKAR_API_TOKEN || "";
-    const authorization = req.headers.authorization || "";
-    if (!apiToken || !safeEqual(authorization, `Bearer ${apiToken}`)) {
-      return send(res, 401, { error: "unauthorized" });
+    const apiToken = (process.env.IKAR_API_TOKEN || "").trim();
+    const authorization = (req.headers.authorization || "").trim();
+    if (!apiToken) {
+      return send(res, 503, { error: "api_token_not_configured" });
+    }
+    if (!safeEqual(authorization, `Bearer ${apiToken}`)) {
+      return send(res, 401, { error: "invalid_api_token" });
     }
 
     let body;
