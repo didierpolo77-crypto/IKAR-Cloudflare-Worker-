@@ -1,3 +1,5 @@
+import { timingSafeEqual } from "node:crypto";
+
 const ALLOWED_TYPES = new Set(["A", "AAAA", "CNAME", "MX", "NS", "TXT"]);
 const ADGUARD_DOH = "https://dns.adguard-dns.com/resolve";
 
@@ -16,7 +18,7 @@ function authorized(req) {
   const actual = supplied.slice(7);
   const left = Buffer.from(actual);
   const right = Buffer.from(expected);
-  return left.length === right.length && require("node:crypto").timingSafeEqual(left, right);
+  return left.length === right.length && timingSafeEqual(left, right);
 }
 
 function validDomain(name) {
