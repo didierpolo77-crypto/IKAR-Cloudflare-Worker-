@@ -21,3 +21,6 @@ Application Android autonome, distincte de Sentinel IA.
 Java 17, Gradle 8.9, Android compile SDK 35.
 Package : com.ikar.mobile
 Minimum : Android 8.0 (API 26)
+
+## Dépendance de déploiement à résoudre avant le test mobile
+Le projet Vercel IKAR utilise actuellement une protection SSO sur les déploiements vercel.app. Le jeton API seul peut donc ne pas suffire depuis l'application Android. Il faudra configurer un point d'accès mobile public avec authentification API, sans désactiver la protection du tableau de bord ni exposer de secret dans l'APK.
