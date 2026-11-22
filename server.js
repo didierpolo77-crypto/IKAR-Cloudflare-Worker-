@@ -77,6 +77,54 @@ async function resolveWithAdGuard(name, type = "A") {
   };
 }
 
+async function lookupUrlhausHost(host) {
+  const authKey = (process.env.URLHAUS_AUTH_KEY || "").trim();
+  if (!authKey) return { status: "unavailable", reason: "urlhaus_key_not_configured" };
+  const form = new URLSearchParams({ host });
+  let response;
+  try {
+    response = await fetch("https://urlhaus-api.abuse.ch/v1/host/", {
+      method: "POST",
+      headers: {
+        "Auth-Key": authKey,
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: form,
+      signal: AbortSignal.timeout(10000)
+    });
+  } catch {
+    return { status: "unavailable", reason: "urlhaus_connection_failed" };
+  }
+  if (!response.ok) return { status: "unavailable", reason: "urlhaus_http_error" };
+  let data;
+  try { data = await response.json(); }
+  catch { return { status: "unavailable", reason: "urlhaus_invalid_response" }; }
+  if (data.query_status === "no_results") {
+    return { provider: "URLhaus (abuse.ch)", status: "not_listed", checked_host: host };
+  }
+  if (data.query_status !== "ok") {
+    return { status: "unavailable", reason: "urlhaus_query_error" };
+  }
+  const urls = Array.isArray(data.urls) ? data.urls : [];
+  const online = urls.filter(item => item && item.url_status === "online");
+  return {
+    provider: "URLhaus (abuse.ch)",
+    status: "listed",
+    checked_host: host,
+    first_seen: data.firstseen || null,
+    url_count: Number.parseInt(data.url_count, 10) || urls.length,
+    online_url_count: online.length,
+    sample_urls: urls.slice(0, 5).map(item => ({
+      url: typeof item.url === "string" ? item.url.slice(0, 500) : null,
+      status: item.url_status || null,
+      threat: item.threat || null,
+      date_added: item.date_added || null
+    })),
+    blacklists: data.blacklists && typeof data.blacklists === "object" ? data.blacklists : null,
+    reference: typeof data.urlhaus_reference === "string" ? data.urlhaus_reference : null
+  };
+}
+
 async function handle(req, res) {
   const url = new URL(req.url, "http://localhost");
 
@@ -297,15 +345,28 @@ small{color:#526170}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#
     let dns;
     try { dns = await resolveWithAdGuard(name, "A"); }
     catch (error) { return send(res, 502, { error: error.message === "adguard_dns_error" ? error.message : "adguard_dns_unreachable" }); }
-    const status = dns.dns_status === 0 ? "resolved" : dns.dns_status === 3 ? "not_found" : "dns_error";
+    const dnsStatus = dns.dns_status === 0 ? "resolved" : dns.dns_status === 3 ? "not_found" : "dns_error";
+    const reputation = await lookupUrlhausHost(name);
+    let risk = "undetermined";
+    let note = "Aucune conclusion fiable possible : la réputation URLhaus n'est pas disponible.";
+    if (reputation.status === "listed") {
+      risk = reputation.online_url_count > 0 ? "high" : "elevated";
+      note = reputation.online_url_count > 0
+        ? "URLhaus signale des URL de distribution de logiciels malveillants actuellement en ligne sur cet hôte. Évite de le visiter."
+        : "URLhaus connaît des URL associées à des logiciels malveillants sur cet hôte. Cela ne prouve pas que chaque page du domaine est malveillante.";
+    } else if (reputation.status === "not_listed") {
+      risk = "no_known_match";
+      note = "Aucune correspondance trouvée dans URLhaus. Cela ne garantit pas que le domaine est sûr.";
+    }
     return send(res, 200, {
       service: "IKAR Domain Security Check",
       domain: name,
       dns: dns,
+      reputation,
       assessment: {
-        status,
-        risk: "undetermined",
-        note: "La résolution DNS seule ne permet pas de conclure qu'un domaine est malveillant. Une vérification de réputation supplémentaire est nécessaire."
+        status: dnsStatus,
+        risk,
+        note
       }
     });
   }
