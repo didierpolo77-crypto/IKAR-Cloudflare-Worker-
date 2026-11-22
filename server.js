@@ -91,6 +91,52 @@ async function handle(req, res) {
     });
   }
 
+  if (req.method === "GET" && url.pathname === "/domain-test") {
+    return sendHtml(res, 200, `<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Test sécurité de domaine IKAR</title>
+<style>
+body{font:16px system-ui,sans-serif;max-width:560px;margin:32px auto;padding:0 16px;color:#18202a}
+label{display:block;margin:14px 0 6px;font-weight:600}
+input,button{box-sizing:border-box;width:100%;padding:12px;border:1px solid #aab4c0;border-radius:8px;font:inherit}
+button{margin-top:18px;background:#1457c5;color:white;border:0;font-weight:700}
+button:disabled{opacity:.6}
+small{color:#526170}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f1f4f7;padding:12px;border-radius:8px;min-height:48px}
+</style>
+</head>
+<body>
+<h1>Test sécurité de domaine IKAR</h1>
+<p>Ce test vérifie le domaine via AdGuard DNS. La vérification DNS seule ne détermine pas si un site est malveillant.</p>
+<label for="token">Jeton API IKAR</label>
+<input id="token" type="password" autocomplete="off" placeholder="Saisir le jeton API" />
+<label for="domain">Domaine à vérifier</label>
+<input id="domain" value="example.com" autocomplete="off" />
+<button id="submit" type="button">Vérifier le domaine</button>
+<h2>Résultat</h2>
+<pre id="result">En attente du test.</pre>
+<script>
+(function(){
+  var button=document.getElementById("submit"), token=document.getElementById("token"), domain=document.getElementById("domain"), result=document.getElementById("result");
+  button.addEventListener("click",async function(){
+    var secret=token.value.trim(), name=domain.value.trim();
+    if(!secret){result.textContent="Saisis d'abord ton jeton API IKAR.";return;}
+    if(!name){result.textContent="Saisis un nom de domaine.";return;}
+    token.value=""; button.disabled=true; result.textContent="Vérification en cours…";
+    try{
+      var response=await fetch("/v1/security/domain-check",{method:"POST",headers:{"Authorization":"Bearer "+secret,"Content-Type":"application/json"},body:JSON.stringify({domain:name})});
+      var data=await response.json(); result.textContent="HTTP "+response.status+"\\n"+JSON.stringify(data,null,2);
+    }catch(error){result.textContent="Erreur réseau : "+String(error&&error.message||error);}
+    finally{button.disabled=false;}
+  });
+})();
+</script>
+</body>
+</html>`);
+  }
+
   if (req.method === "GET" && url.pathname === "/dns-test") {
     return sendHtml(res, 200, `<!doctype html>
 <html lang="fr">
