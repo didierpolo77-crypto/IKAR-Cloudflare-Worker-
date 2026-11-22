@@ -59,8 +59,10 @@ test("a historical URLhaus match is elevated, not high", () => {
     [{ status: "listed", checked_host: "old.example", online_url_count: 0, url_count: 2 }],
     [{ status: "not_listed" }]
   );
-  assert.equal(result.risk, "elevated");
-  assert.ok(result.reasons.some(reason => reason.code === "urlhaus_historical_or_inactive_match"));
+  assert.equal(result.risk, "historical");
+  const reason = result.reasons.find(item => item.code === "urlhaus_historical_or_inactive_match");
+  assert.equal(reason.severity, "info");
+  assert.match(result.note, /aucune URL active/i);
 });
 
 test("a high-confidence ThreatFox match is high risk with its confidence", () => {
@@ -165,4 +167,23 @@ test("confidence score reflects partial query coverage, not the risk verdict", (
   );
   assert.equal(result.confidence.score, 75);
   assert.equal(result.risk, "undetermined");
+});
+
+
+test("historical URLhaus-only evidence is separated from an active threat verdict", () => {
+  const result = assessReputation(
+    [{ status: "listed", checked_host: "old.example", online_url_count: 0, url_count: 5 }],
+    [{ status: "not_listed", checked_ioc: "old.example" }]
+  );
+  assert.equal(result.risk, "historical");
+  assert.equal(result.matchesFound, 1);
+  assert.ok(result.reasons.some(reason => reason.code === "urlhaus_historical_or_inactive_match" && reason.severity === "info"));
+});
+
+test("historical URLhaus evidence plus a ThreatFox match remains elevated or high", () => {
+  const result = assessReputation(
+    [{ status: "listed", checked_host: "mixed.example", online_url_count: 0 }],
+    [{ status: "listed", checked_ioc: "mixed.example", matches: [{ confidence_level: 45 }] }]
+  );
+  assert.equal(result.risk, "elevated");
 });
