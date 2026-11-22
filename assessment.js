@@ -61,7 +61,7 @@ export function assessReputation(urlhausResults = [], threatfoxResults = [], opt
     } else {
       reasons.push({
         code: "urlhaus_historical_or_inactive_match",
-        severity: "elevated",
+        severity: "info",
         provider: item.provider || "URLhaus (abuse.ch)",
         indicator: item.checked_host || null,
         message: "URLhaus a une entrée pour cet hôte, mais aucune URL active n'est confirmée dans le résultat actuel.",
@@ -153,8 +153,16 @@ export function assessReputation(urlhausResults = [], threatfoxResults = [], opt
     risk = "high";
     note = "Au moins un indicateur répond à un critère de risque élevé : URL malveillante encore active dans URLhaus ou correspondance ThreatFox avec confiance d'au moins 70/100.";
   } else if (anyMatch) {
-    risk = "elevated";
-    note = "Une correspondance existe, mais les éléments disponibles ne remplissent pas les critères de risque élevé.";
+    const onlyHistoricalUrlhausMatches = urlhausMatches.length > 0 &&
+      threatfoxMatches.length === 0 &&
+      urlhausMatches.every(item => Math.max(0, Number(item.online_url_count) || 0) === 0);
+    if (onlyHistoricalUrlhausMatches && urlhausAvailable && threatfoxAvailable) {
+      risk = "historical";
+      note = "Une entrée historique existe dans URLhaus, mais aucune URL active n'est confirmée et ThreatFox ne signale aucune correspondance. Cette information mérite une vérification, sans être assimilée à une menace active.";
+    } else {
+      risk = "elevated";
+      note = "Une correspondance existe, mais les éléments disponibles ne remplissent pas les critères de risque élevé.";
+    }
   } else if (urlhausAvailable && threatfoxAvailable) {
     risk = "no_known_match";
     note = "Aucune correspondance n'a été trouvée dans les deux sources interrogées pour les indicateurs vérifiés. Cela ne garantit pas que l'indicateur est sûr.";
@@ -211,9 +219,12 @@ export function assessReputation(urlhausResults = [], threatfoxResults = [], opt
         "URLhaus : au moins une URL avec statut online",
         "ThreatFox : confiance d'une correspondance supérieure ou égale à 70/100"
       ],
+      historical_risk: [
+        "URLhaus conserve une entrée, mais aucune URL active n'est confirmée et ThreatFox ne signale aucune correspondance"
+      ],
       elevated_risk: [
-        "Correspondance URLhaus sans URL active confirmée",
-        "Correspondance ThreatFox avec confiance inférieure à 70/100 ou non renseignée"
+        "Correspondance ThreatFox avec confiance inférieure à 70/100 ou non renseignée",
+        "Correspondance URLhaus accompagnée d'autres éléments de risque ou d'une couverture incomplète"
       ]
     },
     limitations: [
