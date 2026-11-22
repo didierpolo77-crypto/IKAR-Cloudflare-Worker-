@@ -53,6 +53,86 @@ async function handle(req, res) {
     });
   }
 
+  if (url.pathname === "/api/dns/resolve") {
+    if (req.method !== "POST") {
+      return send(res, 405, { error: "method_not_allowed" });
+    }
+
+    const apiToken = process.env.IKAR_API_TOKEN || "";
+    const authorization = req.headers.authorization || "";
+    if (!apiToken || !safeEqual(authorization, `Bearer ${apiToken}`)) {
+      return send(res, 401, { error: "unauthorized" });
+    }
+
+    let body;
+    try {
+      body = JSON.parse(await readBody(req, 4000));
+    } catch (error) {
+      return send(res, error.status || 400, { error: error.status ? error.message : "invalid_json" });
+    }
+
+    const name = typeof body?.name === "string" ? body.name.trim().toLowerCase() : "";
+    const type = typeof body?.type === "string" ? body.type.trim().toUpperCase() : "A";
+    const allowedTypes = new Set(["A", "AAAA", "CNAME", "MX", "NS", "TXT"]);
+    const normalizedName = name.replace(/\\.$/, "");
+    const validDomain = normalizedName.length >= 1 && normalizedName.length <= 253 &&
+      !normalizedName.includes("://") && !normalizedName.includes("/") && !normalizedName.includes(":") &&
+      normalizedName.split(".").every(label =>
+        label.length >= 1 && label.length <= 63 &&
+        /^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(label)
+      );
+
+    if (!validDomain) return send(res, 400, { error: "invalid_domain" });
+    if (!allowedTypes.has(type)) return send(res, 400, { error: "unsupported_record_type" });
+
+    const query = new URL("https://dns.adguard-dns.com/resolve");
+    query.searchParams.set("name", normalizedName);
+    query.searchParams.set("type", type);
+
+    let upstream;
+    try {
+      upstream = await fetch(query, {
+        method: "GET",
+        headers: { "Accept": "application/dns-json" },
+        signal: AbortSignal.timeout(8000)
+      });
+    } catch {
+      return send(res, 502, { error: "adguard_dns_unreachable" });
+    }
+
+    if (!upstream.ok) return send(res, 502, { error: "adguard_dns_error" });
+
+    let result;
+    try {
+      result = await upstream.json();
+    } catch {
+      return send(res, 502, { error: "invalid_adguard_response" });
+    }
+
+    if (!Number.isInteger(result.Status)) {
+      return send(res, 502, { error: "unexpected_adguard_response" });
+    }
+
+    return send(res, 200, {
+      service: "IKAR AdGuard DNS-over-HTTPS",
+      provider: "AdGuard Public DNS",
+      transport: "DNS-over-HTTPS",
+      queried_name: normalizedName,
+      record_type: type,
+      dns_status: result.Status,
+      answers: Array.isArray(result.Answer)
+        ? result.Answer.slice(0, 20).map(record => ({
+            name: record.name,
+            type: record.type,
+            ttl: record.TTL,
+            data: record.data
+          }))
+        : [],
+      authenticated_data: result.AD === true,
+      recursion_available: result.RA === true
+    });
+  }
+
   if (url.pathname === "/v1/security/analyze") {
     if (req.method !== "POST") {
       return send(res, 405, { error: "method_not_allowed" });
