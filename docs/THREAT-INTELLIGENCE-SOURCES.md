@@ -36,7 +36,8 @@ Rules:
 ## Risk policy currently implemented
 
 - `high`: URLhaus reports one or more URLs still online, or ThreatFox reports a match with confidence >= 70/100.
-- `elevated`: a match exists but does not meet the high-risk criteria.
+- `historical`: URLhaus retains an entry with no URL currently confirmed online, ThreatFox has no match, and both sources fully answered. This is historical evidence, not an active-threat verdict.
+- `elevated`: a ThreatFox match below the high-risk confidence threshold, or a URLhaus match combined with other risk evidence or incomplete source coverage.
 - `no_known_match`: both current sources answered successfully and neither returned a match.
 - `undetermined`: source coverage is insufficient or sources are unavailable.
 
