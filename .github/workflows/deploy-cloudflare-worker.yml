@@ -1,29 +1,14 @@
-name: Deploy IKAR Cloudflare Worker
+name: Cloudflare deployment (disabled)
 
+# Vercel is the active IKAR hosting platform. This legacy workflow is kept
+# for reference only and must not deploy or synchronize secrets to Cloudflare.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "src/**"
-      - "wrangler.toml"
-      - ".github/workflows/deploy-cloudflare-worker.yml"
-      - "README.md"
   workflow_dispatch:
 
 jobs:
   deploy:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Deploy Worker and sync secrets
-        uses: cloudflare/wrangler-action@v4
-        with:
-          apiToken: ${{ secrets.CF_API_TOKEN }}
-          accountId: ${{ vars.CF_ACCOUNT_ID }}
-          command: deploy
-          secrets: |
-            IKAR_API_TOKEN
-            URLHAUS_AUTH_KEY
-        env:
-          IKAR_API_TOKEN: ${{ secrets.IKAR_API_TOKEN }}
-          URLHAUS_AUTH_KEY: ${{ secrets.URLHAUS_AUTH_KEY }}
+      - name: Deployment disabled
+        run: echo "Cloudflare deployment is disabled. IKAR is deployed through Vercel."

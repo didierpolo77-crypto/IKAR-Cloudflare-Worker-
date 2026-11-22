@@ -1,0 +1,22 @@
+name: IKAR reputation failure tests
+
+on:
+  push:
+    branches:
+      - feature/adguard-integration-current
+  pull_request:
+    branches:
+      - feature/adguard-integration-current
+
+jobs:
+  reputation-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run isolated reputation tests
+        run: npm test
