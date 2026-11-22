@@ -437,9 +437,14 @@ small{color:#526170}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#
 
     let risk = "undetermined";
     let note = "Les sources de réputation n'ont pas fourni assez de données pour conclure.";
-    if (anyMatch) {
-      risk = activeUrlhaus || highConfidenceThreatFox ? "high" : "elevated";
-      note = "Au moins une source de renseignement sur les menaces signale cet hôte ou une adresse IP associée. Évite de le visiter et vérifie les indicateurs détaillés.";
+    if (activeUrlhaus || highConfidenceThreatFox) {
+      risk = "high";
+      note = activeUrlhaus
+        ? "URLhaus signale au moins une URL encore active pour cet indicateur. Risque élevé : évite de visiter cet hôte."
+        : "ThreatFox signale un indicateur avec un niveau de confiance élevé (70 ou plus). Risque élevé : évite tout contact avec cet indicateur.";
+    } else if (anyMatch) {
+      risk = "elevated";
+      note = "Une correspondance historique ou de confiance insuffisante a été trouvée, mais aucune activité malveillante actuelle n'est confirmée par les critères élevés. Prudence recommandée ; consulte les détails des sources.";
     } else if (urlhausAvailable && threatfoxAvailable) {
       risk = "no_known_match";
       note = "Aucune correspondance trouvée dans URLhaus et ThreatFox pour les indicateurs vérifiés. Cela ne garantit pas que le domaine ou l'adresse IP est sûr.";
