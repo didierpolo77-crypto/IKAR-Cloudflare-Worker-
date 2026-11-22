@@ -50,6 +50,33 @@ async function readBody(req, maxBytes = 12000) {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+async function resolveWithAdGuard(name, type = "A") {
+  const query = new URL("https://dns.adguard-dns.com/resolve");
+  query.searchParams.set("name", name);
+  query.searchParams.set("type", type);
+  const upstream = await fetch(query, {
+    headers: { "Accept": "application/dns-json" },
+    signal: AbortSignal.timeout(8000)
+  });
+  if (!upstream.ok) throw new Error("adguard_dns_error");
+  const result = await upstream.json();
+  if (!Number.isInteger(result.Status)) throw new Error("unexpected_adguard_response");
+  return {
+    provider: "AdGuard Public DNS",
+    transport: "DNS-over-HTTPS",
+    queried_name: name,
+    record_type: type,
+    dns_status: result.Status,
+    answers: Array.isArray(result.Answer)
+      ? result.Answer.slice(0, 20).map(record => ({
+          name: record.name, type: record.type, ttl: record.TTL, data: record.data
+        }))
+      : [],
+    authenticated_data: result.AD === true,
+    recursion_available: result.RA === true
+  };
+}
+
 async function handle(req, res) {
   const url = new URL(req.url, "http://localhost");
 
@@ -206,6 +233,37 @@ small{color:#526170}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#
     });
   }
 
+  if (url.pathname === "/v1/security/domain-check") {
+    if (req.method !== "POST") return send(res, 405, { error: "method_not_allowed" });
+    const apiToken = (process.env.IKAR_API_TOKEN || "").trim();
+    const authorization = (req.headers.authorization || "").trim();
+    if (!apiToken) return send(res, 503, { error: "api_token_not_configured" });
+    if (!safeEqual(authorization, `Bearer ${apiToken}`)) return send(res, 401, { error: "invalid_api_token" });
+    let body;
+    try { body = JSON.parse(await readBody(req, 4000)); }
+    catch (error) { return send(res, error.status || 400, { error: error.status ? error.message : "invalid_json" }); }
+    const name = typeof body?.domain === "string" ? body.domain.trim().toLowerCase().replace(/\\.$/, "") : "";
+    const validDomain = name.length >= 1 && name.length <= 253 &&
+      !name.includes("://") && !name.includes("/") && !name.includes(":") &&
+      name.split(".").every(label => label.length >= 1 && label.length <= 63 &&
+        /^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(label));
+    if (!validDomain) return send(res, 400, { error: "invalid_domain" });
+    let dns;
+    try { dns = await resolveWithAdGuard(name, "A"); }
+    catch (error) { return send(res, 502, { error: error.message === "adguard_dns_error" ? error.message : "adguard_dns_unreachable" }); }
+    const status = dns.dns_status === 0 ? "resolved" : dns.dns_status === 3 ? "not_found" : "dns_error";
+    return send(res, 200, {
+      service: "IKAR Domain Security Check",
+      domain: name,
+      dns: dns,
+      assessment: {
+        status,
+        risk: "undetermined",
+        note: "La résolution DNS seule ne permet pas de conclure qu'un domaine est malveillant. Une vérification de réputation supplémentaire est nécessaire."
+      }
+    });
+  }
+
   if (url.pathname === "/v1/security/analyze") {
     if (req.method !== "POST") {
       return send(res, 405, { error: "method_not_allowed" });
@@ -252,13 +310,25 @@ Ne déclare jamais une application malveillante sur la seule base de permissions
 Distingue clairement risque, indice et preuve. N'invente aucune réputation, signature ou comportement non observé.
 Réponds en français, brièvement, avec : appréciation, indices concordants, limites de l'analyse, actions prudentes à vérifier par l'utilisateur.
 Ne recommande jamais de désinstaller automatiquement une application système ou essentielle.`;
+    let domainDns = null;
+    const domain = safeText(body?.domain, 253).toLowerCase().replace(/\\.$/, "");
+    if (domain) {
+      const validDomain = domain.length <= 253 && !domain.includes("://") &&
+        !domain.includes("/") && !domain.includes(":") &&
+        domain.split(".").every(label => label.length >= 1 && label.length <= 63 &&
+          /^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(label));
+      if (!validDomain) return send(res, 400, { error: "invalid_domain" });
+      try { domainDns = await resolveWithAdGuard(domain, "A"); }
+      catch { domainDns = { error: "dns_lookup_failed", provider: "AdGuard Public DNS" }; }
+    }
     const evidence = {
       application: appLabel,
       package: packageName,
       local_score_heuristic_0_100: localScore,
       local_level: localLevel,
       detected_signals: signals,
-      local_reasons: reasons
+      local_reasons: reasons,
+      domain_dns: domainDns
     };
     let upstream;
     try {
