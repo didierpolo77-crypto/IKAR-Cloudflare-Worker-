@@ -1,4 +1,4 @@
-name: Validate IKAR Render API
+name: Validate IKAR Vercel API
 
 on:
   push:
